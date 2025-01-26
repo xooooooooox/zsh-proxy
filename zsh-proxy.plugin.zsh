@@ -111,7 +111,7 @@ init_zsh_proxy() {
   touch "${ZSH_PROXY_HOME}"/http
   touch "${ZSH_PROXY_HOME}"/socks5
   touch "${ZSH_PROXY_HOME}"/no_proxy
-  echo "0" >"${ZDOTDIR:-${HOME}}/.zsh-proxy/status"
+  echo "0" >"${ZDOTDIR:-${HOME}}/.zsh-proxy/auto"
   echo "----------------------------------------"
   echo "Great! The zsh-proxy is initialized"
   echo "----------------------------------------"
