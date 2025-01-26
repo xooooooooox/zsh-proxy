@@ -124,7 +124,7 @@ config_zsh_proxy() {
   __config_proxy
 }
 
-typeset -gx ZSH_PROXY_HOME="${XDG_CONFIG_HOME:${HOME}}"/zsh-proxy
+typeset -gx ZSH_PROXY_HOME="${XDG_CONFIG_HOME:-${HOME}}"/zsh-proxy
 __check_whether_init
 __auto_proxy
 
