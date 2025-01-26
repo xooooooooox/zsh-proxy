@@ -4,11 +4,15 @@
 
 ### zinit
 
+install plugin from [GitCode](https://gitcode.com/xooooooooox/zsh-proxy)
+
 ```zsh
 zinit snippet 'https://raw.gitcode.com/xooooooooox/zsh-proxy/raw/main/zsh-proxy.plugin.zsh'
 ```
 
 OR
+
+Install plugin from [GitHub](https://github.com/xooooooooox/zsh-proxy)
 
 ```zsh
 zinit light xooooooooox/zsh-proxy
