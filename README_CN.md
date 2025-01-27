@@ -92,12 +92,14 @@ init_zsh_proxy
 
 ```zsh
 config_zsh_proxy
+
 ```
 
 此命令将会提示你输入：
-• SOCKS5 代理地址（默认：127.0.0.1:6153）
-• HTTP 代理地址（默认：127.0.0.1:6152）
-• 不走代理（no-proxy）域名（默认：localhost,127.0.0.1）
+
+- SOCKS5 代理地址（默认：127.0.0.1:6153）
+- HTTP 代理地址（默认：127.0.0.1:6152）
+- 不走代理（no-proxy）域名（默认：localhost,127.0.0.1）
 
 ## 使用方法
 
@@ -119,7 +121,7 @@ config_zsh_proxy
 
 ### 自动代理（Auto Proxy）
 
-如果想在 Shell 启动时自动启用代理，可以编辑文件 ${XDG_CONFIG_HOME-${HOME}}/zsh-proxy/auto：
+如果想在 Shell 启动时自动启用代理，可以编辑文件 `${XDG_CONFIG_HOME-${HOME}}/zsh-proxy/auto`：
 
 ```zsh
 # 禁用自动代理（默认设置）
