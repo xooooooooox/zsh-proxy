@@ -7,6 +7,7 @@ A zsh plugin for managing shell environment proxy settings.
 - Easy proxy configuration through interactive prompts
 - Support for both HTTP and SOCKS5 proxies
 - Automatic proxy activation on shell startup (optional)
+- Automatic proxy availability check when auto-start is enabled
 - Environment variable management for system-wide proxy settings
 - No-proxy list for excluding local addresses
 
