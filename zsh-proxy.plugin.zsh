@@ -163,6 +163,25 @@ __zp_disable() {
   __zp_info "proxy disabled"
 }
 
+# LABEL HOSTPORT EXPORTFN — probe then export (or warn/skip)
+__zp_autostart_proto() {
+  local label=$1 hp=$2 fn=$3
+  __zp_split "$hp"
+  __zp_probe "$reply[1]" "$reply[2]"
+  case $? in
+    0) $fn ;;
+    2) __zp_warn "no probe tool available; enabling $label without check"; $fn ;;
+    *) __zp_warn "$label proxy $hp unreachable; skipped" ;;
+  esac
+}
+
+__zp_autostart() {
+  [[ ${ZSH_PROXY_AUTO-} == 1 ]] || return 0
+  __zp_autostart_proto "http"   "$ZSH_PROXY_HTTP"   __zp_export_http
+  __zp_autostart_proto "socks5" "$ZSH_PROXY_SOCKS5" __zp_export_socks
+  __zp_export_noproxy
+}
+
 # ---- bootstrap (defined fully in later tasks; guard added now) ----
 __zp_bootstrap() { : ; }   # placeholder, replaced in Task 9
 [[ -n ${ZSH_PROXY_NO_BOOTSTRAP-} ]] || __zp_bootstrap
