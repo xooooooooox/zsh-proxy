@@ -138,6 +138,31 @@ __zp_config_interactive() {
   __zp_info "saved to $ZSH_PROXY_CONF"
 }
 
+__zp_export_http() {
+  local v="http://${ZSH_PROXY_HTTP}"
+  export http_proxy=$v HTTP_PROXY=$v https_proxy=$v HTTPS_PROXY=$v
+}
+__zp_export_socks() {
+  local v="socks5://${ZSH_PROXY_SOCKS5}"
+  export all_proxy=$v ALL_PROXY=$v
+}
+__zp_export_noproxy() {
+  export no_proxy=$ZSH_PROXY_NO_PROXY NO_PROXY=$ZSH_PROXY_NO_PROXY
+}
+
+__zp_enable() {
+  __zp_load_config || { __zp_warn "not initialized — run 'zproxy init'"; return 1; }
+  __zp_export_http
+  __zp_export_socks
+  __zp_export_noproxy
+  __zp_info "proxy enabled (http=${ZSH_PROXY_HTTP} socks5=${ZSH_PROXY_SOCKS5})"
+}
+
+__zp_disable() {
+  unset http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY
+  __zp_info "proxy disabled"
+}
+
 # ---- bootstrap (defined fully in later tasks; guard added now) ----
 __zp_bootstrap() { : ; }   # placeholder, replaced in Task 9
 [[ -n ${ZSH_PROXY_NO_BOOTSTRAP-} ]] || __zp_bootstrap
