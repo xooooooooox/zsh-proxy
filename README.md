@@ -87,30 +87,41 @@ source ~/.zsh/zsh-proxy/zsh-proxy.plugin.zsh
 1. Initialize the plugin configuration:
 
 ```zsh
-init_zsh_proxy
+zproxy init
 ```
 
 2. Configure proxy settings:
 
 ```zsh
-config_zsh_proxy
+zproxy config
 ```
 
 This will prompt you to enter:
 
-- SOCKS5 proxy address (default: 127.0.0.1:6153)
 - HTTP proxy address (default: 127.0.0.1:6152)
+- SOCKS5 proxy address (default: 127.0.0.1:6153)
 - No-proxy domains (default: localhost,127.0.0.1)
 
 ## Usage
 
 ### Commands
 
-| Command   | Description                    |
-|-----------|--------------------------------|
-| `proxy`   | Enable proxy settings          |
-| `noproxy` | Disable proxy settings         |
-| `lsproxy` | Display current proxy settings |
+All functionality is exposed through the `zproxy` command:
+
+| Command           | Description                                      |
+|-------------------|---------------------------------------------------|
+| `zproxy on`       | Enable proxy env vars (no reachability check)     |
+| `zproxy off`      | Disable proxy env vars                            |
+| `zproxy ls`       | List current proxy env vars                       |
+| `zproxy status`   | Show config path, http/socks5/no-proxy, auto state |
+| `zproxy auto`     | Show autostart state                               |
+| `zproxy auto on`  | Enable autostart on new shells                    |
+| `zproxy auto off` | Disable autostart on new shells                   |
+| `zproxy config`   | Interactive proxy configuration                    |
+| `zproxy init`     | Create the default config file                     |
+| `zproxy help`     | Show usage                                          |
+
+By default the plugin also creates a shorter convenience command, `proxy`, as an alias for `zproxy` — it is only created when the name `proxy` isn't already a command, function, or alias in your shell (so it never overwrites anything of yours). Set `ZSH_PROXY_CMD` before the plugin loads to rename it, or set `ZSH_PROXY_CMD=""` to disable it entirely. `zproxy status` reports whether the convenience command was created, skipped, or disabled.
 
 ### Environment Variables
 
@@ -123,22 +134,33 @@ The plugin manages the following environment variables:
 
 ### Auto Proxy
 
-To enable automatic proxy activation on shell startup, edit `${XDG_CONFIG_HOME-${HOME}}/zsh-proxy/auto`:
+To enable automatic proxy activation on shell startup:
 
 ```zsh
-# Disable auto proxy (default)
-echo "0" >"${XDG_CONFIG_HOME-${HOME}}/zsh-proxy/auto"
-
-# Enable auto proxy
-echo "1" >"${XDG_CONFIG_HOME-${HOME}}/zsh-proxy/auto"
-
+zproxy auto on
 ```
 
-## Configuration Files
+```zsh
+zproxy auto off  # disable (default)
+```
 
-All configuration files are stored in `${XDG_CONFIG_HOME-${HOME}}/zsh-proxy/`:
+When autostart is enabled, each proxy is reachability-checked before being enabled; an unreachable proxy is skipped with a warning instead of blocking shell startup. `zproxy on` always enables unconditionally, without a reachability check.
 
-- `auto`: Controls automatic proxy activation
-- `http`: HTTP proxy URL
-- `socks5`: SOCKS5 proxy URL
-- `no_proxy`: Comma-separated list of domains to bypass proxy
+> **Note on remote proxies:** The reachability check uses zsh-native `ztcp`, which fails instantly for a **local** proxy (e.g. `127.0.0.1:6152`) whose port is closed — the common case, no startup delay. A **remote** proxy host that silently drops packets (firewall black-hole, no connection refusal) is a different story: `ztcp` alone cannot time-bound that connect, so autostart may pause on the OS TCP connect timeout. This only bites when the proxy is remote **and** black-holed **and** autostart is on. To bound it, install `timeout`/`gtimeout` (e.g. GNU coreutils) — they are used automatically when present — or keep autostart off for remote proxies and enable manually with `zproxy on`.
+
+## Configuration
+
+All settings live in a single file, `${XDG_CONFIG_HOME:-$HOME/.config}/zsh-proxy/proxy.conf`, a sourceable `KEY="value"` file:
+
+```zsh
+ZSH_PROXY_HTTP="127.0.0.1:6152"
+ZSH_PROXY_SOCKS5="127.0.0.1:6153"
+ZSH_PROXY_NO_PROXY="localhost,127.0.0.1"
+ZSH_PROXY_AUTO="0"
+```
+
+`ZSH_PROXY_HTTP` and `ZSH_PROXY_SOCKS5` are bare `host:port` values; the `http://` / `socks5://` scheme is added automatically when the env vars are exported. Manage it with `zproxy init` / `zproxy config`, or hand-edit it directly.
+
+### Upgrading
+
+The old four-file config (`auto`/`http`/`socks5`/`no_proxy`) is no longer read. After upgrading, run `zproxy init` (or `zproxy config`) to create the new `proxy.conf`.

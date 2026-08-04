@@ -87,31 +87,41 @@ source ~/.zsh/zsh-proxy/zsh-proxy.plugin.zsh
 1. 初始化插件配置：
 
 ```zsh
-init_zsh_proxy
+zproxy init
 ```
 
 2. 配置代理设置：
 
 ```zsh
-config_zsh_proxy
-
+zproxy config
 ```
 
 此命令将会提示你输入：
 
-- SOCKS5 代理地址（默认：127.0.0.1:6153）
 - HTTP 代理地址（默认：127.0.0.1:6152）
+- SOCKS5 代理地址（默认：127.0.0.1:6153）
 - 不走代理（no-proxy）域名（默认：localhost,127.0.0.1）
 
 ## 使用方法
 
 ### 命令
 
-| Command   | Description |
-|-----------|-------------|
-| `proxy`   | 启用代理设置      |
-| `noproxy` | 禁用代理设置      |
-| `lsproxy` | 显示当前代理设置    |
+所有功能都通过 `zproxy` 命令暴露：
+
+| Command            | Description               |
+|--------------------|----------------------------|
+| `zproxy on`        | 启用代理环境变量（不检测可达性）  |
+| `zproxy off`       | 禁用代理环境变量               |
+| `zproxy ls`        | 列出当前代理环境变量            |
+| `zproxy status`    | 显示配置路径、http/socks5/no-proxy、自动启动状态 |
+| `zproxy auto`      | 显示自动启动状态               |
+| `zproxy auto on`   | 启用新 Shell 的自动启动         |
+| `zproxy auto off`  | 禁用新 Shell 的自动启动         |
+| `zproxy config`    | 交互式配置代理                |
+| `zproxy init`      | 创建默认配置文件               |
+| `zproxy help`      | 显示用法说明                 |
+
+默认情况下，插件还会创建一个更短的便捷命令 `proxy`，作为 `zproxy` 的别名——仅在 `proxy` 这个名字尚未被命令、函数或别名占用时才会创建（因此不会覆盖你已有的任何同名命令）。可以在插件加载前设置 `ZSH_PROXY_CMD` 来重命名它，或设置 `ZSH_PROXY_CMD=""` 来完全禁用它。`zproxy status` 会报告该便捷命令是已创建、已跳过还是已禁用。
 
 ### 环境变量
 
@@ -123,21 +133,33 @@ config_zsh_proxy
 
 ### 自动代理（Auto Proxy）
 
-如果想在 Shell 启动时自动启用代理，可以编辑文件 `${XDG_CONFIG_HOME-${HOME}}/zsh-proxy/auto`：
+如果想在 Shell 启动时自动启用代理：
 
 ```zsh
-# 禁用自动代理（默认设置）
-echo "0" >"${XDG_CONFIG_HOME-${HOME}}/zsh-proxy/auto"
-
-# 启用自动代理
-echo "1" >"${XDG_CONFIG_HOME-${HOME}}/zsh-proxy/auto"
-
+zproxy auto on
 ```
 
-## 配置文件位置
+```zsh
+zproxy auto off  # 禁用（默认）
+```
 
-所有与该插件相关的配置文件都存储在 `${XDG_CONFIG_HOME-${HOME}}/zsh-proxy/` 目录下：
-• `auto`: 控制是否自动启用代理
-• `http`: HTTP 代理地址
-• `socks5`: SOCKS5 代理地址
-• `no_proxy`: 需要绕过代理的域名列表（用逗号分隔）
+启用自动启动后，每个代理在启用前都会先检测可达性；不可达的代理会被跳过并给出警告，而不会阻塞 Shell 启动。`zproxy on` 始终无条件启用，不检测可达性。
+
+> **关于远程代理：** 可达性检测使用 zsh 原生的 `ztcp`。对**本地**代理（如 `127.0.0.1:6152`），端口未开时会立即失败——这是常见场景，不会拖慢启动。但**远程**代理主机若被防火墙**静默丢包**（既不拒绝也不响应），`ztcp` 本身无法给该连接设置超时，自动启动可能会卡在操作系统的 TCP 连接超时上。此问题仅在「代理是远程主机 **且** 被静默丢包 **且** 开启了自动启动」时才会触发。若要限时，请安装 `timeout`/`gtimeout`（如 GNU coreutils）——存在时会被自动使用；或对远程代理关闭自动启动，改用 `zproxy on` 手动启用。
+
+## 配置
+
+所有配置项都存放在单个文件 `${XDG_CONFIG_HOME:-$HOME/.config}/zsh-proxy/proxy.conf` 中，是一个可被 source 的 `KEY="value"` 文件：
+
+```zsh
+ZSH_PROXY_HTTP="127.0.0.1:6152"
+ZSH_PROXY_SOCKS5="127.0.0.1:6153"
+ZSH_PROXY_NO_PROXY="localhost,127.0.0.1"
+ZSH_PROXY_AUTO="0"
+```
+
+`ZSH_PROXY_HTTP` 和 `ZSH_PROXY_SOCKS5` 是不带协议前缀的 `host:port` 值；导出环境变量时会自动补上 `http://` / `socks5://` 前缀。可通过 `zproxy init` / `zproxy config` 管理，也可以直接手动编辑该文件。
+
+### 升级说明
+
+旧版的四文件配置（`auto`/`http`/`socks5`/`no_proxy`）不再被读取。升级后请运行 `zproxy init`（或 `zproxy config`）以创建新的 `proxy.conf`。

@@ -1,134 +1,262 @@
-#!/bin/zsh
+#!/usr/bin/env zsh
+# zsh-proxy — manage shell proxy environment variables via a single config file.
 
-__check_whether_init() {
-  if [ ! -f "${ZSH_PROXY_HOME}/auto" ] || [ ! -f "${ZSH_PROXY_HOME}/http" ] || [ ! -f "${ZSH_PROXY_HOME}/socks5" ] || [ ! -f "${ZSH_PROXY_HOME}/no_proxy" ]; then
-    echo "----------------------------------------"
-    echo "You should run following command first:"
-    echo "$ init_zsh_proxy"
-    echo "----------------------------------------"
+: ${ZSH_PROXY_HOME:="${XDG_CONFIG_HOME:-$HOME/.config}/zsh-proxy"}
+typeset -gx ZSH_PROXY_HOME
+typeset -g  ZSH_PROXY_CONF="${ZSH_PROXY_HOME}/proxy.conf"
+
+__zp_info() { print -r -- "zsh-proxy: $*"; }
+__zp_warn() { print -r -u2 -- "zsh-proxy: $*"; }
+
+# __zp_validate_hostport HOST:PORT  -> 0 valid / 1 invalid
+__zp_validate_hostport() {
+  local hp=${1-} host port
+  if [[ $hp == \[*\]:* ]]; then          # [ipv6]:port
+    host=${hp%:*}; port=${hp##*:}
+  elif [[ $hp == *:* ]]; then            # host:port (split on last colon)
+    host=${hp%:*}; port=${hp##*:}
   else
-    __read_proxy_config
+    return 1
   fi
+  host=${host#\[}; host=${host%\]}
+  [[ -n $host ]] || return 1
+  [[ $port == <1-65535> ]] || return 1
+  return 0
 }
 
-__read_proxy_config() {
-  __ZSH_PROXY_AUTO=$(cat "${ZSH_PROXY_HOME}/auto")
-  __ZSH_PROXY_SOCKS5=$(cat "${ZSH_PROXY_HOME}/socks5")
-  __ZSH_PROXY_HTTP=$(cat "${ZSH_PROXY_HOME}/http")
-  __ZSH_PROXY_NO_PROXY=$(cat "${ZSH_PROXY_HOME}/no_proxy")
-}
-
-__is_proxy_available() {
-  local proxy=${1:?}
-  local str proxy_ip proxy_port
-  str=${proxy#*://}
-  proxy_ip=${str%:*}
-  proxy_port=${str#*:}
-  proxy_port=${proxy_port%*/}
-  # Use nc (netcat) to check if the port is listening
-  nc -z "$proxy_ip" "$proxy_port" >/dev/null 2>&1
-}
-
-__enable_proxy_all() {
-  # http_proxy
-  if __is_proxy_available "${__ZSH_PROXY_HTTP}"; then
-    export http_proxy="${__ZSH_PROXY_HTTP}"
-    export HTTP_PROXY="${__ZSH_PROXY_HTTP}"
-    # https_proxy
-    export https_proxy="${__ZSH_PROXY_HTTP}"
-    export HTTPS_PROXY="${__ZSH_PROXY_HTTP}"
+# __zp_split HOST:PORT  -> sets reply=(host port), brackets stripped
+__zp_split() {
+  local hp=${1-} host port
+  if [[ $hp == *:* ]]; then
+    host=${hp%:*}; port=${hp##*:}
+  else
+    host=$hp; port=""
   fi
-  if __is_proxy_available "${__ZSH_PROXY_SOCKS5}"; then
-    # all_proxy
-    export ALL_PROXY="${__ZSH_PROXY_SOCKS5}"
-    export all_proxy="${__ZSH_PROXY_SOCKS5}"
+  host=${host#\[}; host=${host%\]}
+  reply=("$host" "$port")
+}
+
+# __zp_probe_ztcp HOST PORT
+__zp_probe_ztcp() {
+  zmodload -e zsh/net/tcp 2>/dev/null || zmodload zsh/net/tcp 2>/dev/null || return 2
+  if ztcp "$1" "$2" 2>/dev/null; then
+    ztcp -c $REPLY 2>/dev/null
+    return 0
   fi
-  # no_proxy
-  export NO_PROXY="${__ZSH_PROXY_NO_PROXY}"
-  export no_proxy="${__ZSH_PROXY_NO_PROXY}"
+  return 1
 }
 
-__auto_proxy() {
-  if [ "${__ZSH_PROXY_AUTO}" = "1" ]; then
-    __enable_proxy_all
+# __zp_probe_nc HOST PORT  (bounded by timeout/gtimeout when present)
+__zp_probe_nc() {
+  (( ${+commands[nc]} )) || return 2
+  local -a t
+  if (( ${+commands[timeout]} ));  then t=(timeout 1)
+  elif (( ${+commands[gtimeout]} )); then t=(gtimeout 1)
   fi
+  $t nc -z -w1 "$1" "$2" >/dev/null 2>&1 && return 0
+  return 1
 }
 
-__list_proxy() {
-  echo "HTTP_PROXY=\"${HTTP_PROXY}\""
-  echo "HTTPS_PROXY=\"${HTTPS_PROXY}\""
-  echo "ALL_PROXY=\"${ALL_PROXY}\""
-  echo "NO_PROXY=\"${NO_PROXY}\""
+# __zp_probe HOST PORT -> 0 reachable / 1 unreachable / 2 no tool
+__zp_probe() {
+  local method=${ZSH_PROXY_PROBE:-auto} host=$1 port=$2
+  case $method in
+    ztcp) __zp_probe_ztcp "$host" "$port" ;;
+    nc)   __zp_probe_nc   "$host" "$port" ;;
+    auto)
+      __zp_probe_ztcp "$host" "$port"
+      local rc=$?
+      if (( rc == 2 )); then
+        __zp_probe_nc "$host" "$port"
+      else
+        return $rc
+      fi
+      ;;
+    *) __zp_warn "unknown ZSH_PROXY_PROBE='$method'"; return 2 ;;
+  esac
 }
 
-__disable_proxy() {
-  unset http_proxy
-  unset HTTP_PROXY
-  unset https_proxy
-  unset HTTPS_PROXY
-  unset all_proxy
-  unset ALL_PROXY
-  unset no_proxy
-  unset NO_PROXY
+__zp_load_config() {
+  [[ -f $ZSH_PROXY_CONF ]] || return 1
+  source "$ZSH_PROXY_CONF"
+  return 0
 }
 
-__config_proxy() {
-  echo "========================================"
-  echo "ZSH Proxy Plugin Config"
-  echo "----------------------------------------"
+# atomic: write temp then mv over the real file
+__zp_save_config() {
+  mkdir -p "$ZSH_PROXY_HOME" || { __zp_warn "cannot create $ZSH_PROXY_HOME"; return 1; }
+  local tmp="${ZSH_PROXY_CONF}.tmp.$$"
+  {
+    print -r -- "# zsh-proxy config — managed by 'zproxy config', safe to hand-edit"
+    print -r -- "ZSH_PROXY_HTTP=\"${ZSH_PROXY_HTTP}\""
+    print -r -- "ZSH_PROXY_SOCKS5=\"${ZSH_PROXY_SOCKS5}\""
+    print -r -- "ZSH_PROXY_NO_PROXY=\"${ZSH_PROXY_NO_PROXY}\""
+    print -r -- "ZSH_PROXY_AUTO=\"${ZSH_PROXY_AUTO}\""
+  } > "$tmp" || { __zp_warn "failed writing $tmp"; rm -f "$tmp"; return 1; }
+  mv -f "$tmp" "$ZSH_PROXY_CONF" || { __zp_warn "failed updating $ZSH_PROXY_CONF"; rm -f "$tmp"; return 1; }
+  return 0
+}
 
-  echo -n "[socks5 proxy] {Default as 127.0.0.1:6153}
-(address:port): "
-  read -r __read_socks5
+__zp_init() {
+  : ${ZSH_PROXY_HTTP:=127.0.0.1:6152}
+  : ${ZSH_PROXY_SOCKS5:=127.0.0.1:6153}
+  : ${ZSH_PROXY_NO_PROXY:=localhost,127.0.0.1}
+  : ${ZSH_PROXY_AUTO:=0}
+  __zp_save_config || return 1
+  __zp_info "initialized at $ZSH_PROXY_CONF"
+}
 
-  echo -n "[http proxy]   {Default as 127.0.0.1:6152}
-(address:port): "
-  read -r __read_http
+# prompt on stderr, echo validated host:port on stdout
+__zp_prompt_hostport() {
+  local label=$1 def=$2 input
+  while true; do
+    print -n -u2 -- "[$label] (host:port) [$def]: "
+    read -r input || return 1
+    [[ -z $input ]] && input=$def
+    if __zp_validate_hostport "$input"; then
+      print -r -- "$input"
+      return 0
+    fi
+    __zp_warn "invalid '$input' — expected host:port with port 1-65535"
+  done
+}
 
-  echo -n "[no proxy domain] {Default as 'localhost,127.0.0.1'}
-(comma separate domains): "
-  read -r __read_no_proxy
+__zp_config_interactive() {
+  __zp_load_config 2>/dev/null   # seed defaults from existing config if any
+  local http socks noproxy
+  http=$(__zp_prompt_hostport "http proxy"   "${ZSH_PROXY_HTTP:-127.0.0.1:6152}")   || return 1
+  socks=$(__zp_prompt_hostport "socks5 proxy" "${ZSH_PROXY_SOCKS5:-127.0.0.1:6153}") || return 1
+  local def_np=${ZSH_PROXY_NO_PROXY:-localhost,127.0.0.1}
+  print -n -u2 -- "[no proxy] (comma domains) [$def_np]: "
+  read -r noproxy || return 1
+  [[ -z $noproxy ]] && noproxy=$def_np
+  ZSH_PROXY_HTTP=$http
+  ZSH_PROXY_SOCKS5=$socks
+  ZSH_PROXY_NO_PROXY=$noproxy
+  : ${ZSH_PROXY_AUTO:=0}
+  __zp_save_config || return 1
+  __zp_info "saved to $ZSH_PROXY_CONF"
+}
 
-  if [ -z "${__read_socks5}" ]; then
-    __read_socks5="127.0.0.1:6153"
+__zp_export_http() {
+  local v="http://${ZSH_PROXY_HTTP}"
+  export http_proxy=$v HTTP_PROXY=$v https_proxy=$v HTTPS_PROXY=$v
+}
+__zp_export_socks() {
+  local v="socks5://${ZSH_PROXY_SOCKS5}"
+  export all_proxy=$v ALL_PROXY=$v
+}
+__zp_export_noproxy() {
+  export no_proxy=$ZSH_PROXY_NO_PROXY NO_PROXY=$ZSH_PROXY_NO_PROXY
+}
+
+__zp_enable() {
+  __zp_load_config || { __zp_warn "not initialized — run 'zproxy init'"; return 1; }
+  __zp_export_http
+  __zp_export_socks
+  __zp_export_noproxy
+  __zp_info "proxy enabled (http=${ZSH_PROXY_HTTP} socks5=${ZSH_PROXY_SOCKS5})"
+}
+
+__zp_disable() {
+  unset http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY
+  __zp_info "proxy disabled"
+}
+
+# LABEL HOSTPORT EXPORTFN — probe then export (or warn/skip)
+__zp_autostart_proto() {
+  local label=$1 hp=$2 fn=$3
+  __zp_split "$hp"
+  __zp_probe "$reply[1]" "$reply[2]"
+  case $? in
+    0) $fn ;;
+    2) __zp_warn "no probe tool available; enabling $label without check"; $fn ;;
+    *) __zp_warn "$label proxy $hp unreachable; skipped" ;;
+  esac
+}
+
+__zp_autostart() {
+  [[ ${ZSH_PROXY_AUTO-} == 1 ]] || return 0
+  __zp_autostart_proto "http"   "$ZSH_PROXY_HTTP"   __zp_export_http
+  __zp_autostart_proto "socks5" "$ZSH_PROXY_SOCKS5" __zp_export_socks
+  __zp_export_noproxy
+}
+
+__zp_list() {
+  local v
+  for v in http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY; do
+    print -r -- "$v=${(P)v}"
+  done
+}
+
+__zp_status() {
+  __zp_load_config 2>/dev/null
+  print -r -- "config:  ${ZSH_PROXY_CONF}"
+  print -r -- "http:    ${ZSH_PROXY_HTTP:-<unset>}"
+  print -r -- "socks5:  ${ZSH_PROXY_SOCKS5:-<unset>}"
+  print -r -- "noproxy: ${ZSH_PROXY_NO_PROXY:-<unset>}"
+  print -r -- "auto:    ${ZSH_PROXY_AUTO:-0}"
+  print -r -- "command: ${ZSH_PROXY_CMD_STATUS:-<none>}"
+}
+
+__zp_help() {
+  print -r -- "usage: zproxy <command>"
+  print -r -- "  on            enable proxy env vars (no reachability check)"
+  print -r -- "  off           disable proxy env vars"
+  print -r -- "  ls            list current proxy env vars"
+  print -r -- "  status        show config, auto state, convenience name"
+  print -r -- "  auto [on|off] toggle / show autostart on new shells"
+  print -r -- "  config        interactive configuration"
+  print -r -- "  init          create default config"
+  print -r -- "  help          this help"
+}
+
+__zp_auto_cmd() {
+  __zp_load_config || { __zp_warn "not initialized — run 'zproxy init'"; return 1; }
+  case ${1-} in
+    on)  ZSH_PROXY_AUTO=1; __zp_save_config && __zp_info "autostart enabled" ;;
+    off) ZSH_PROXY_AUTO=0; __zp_save_config && __zp_info "autostart disabled" ;;
+    "")  __zp_info "autostart is ${ZSH_PROXY_AUTO:-0}" ;;
+    *)   __zp_warn "usage: zproxy auto [on|off]"; return 1 ;;
+  esac
+}
+
+zproxy() {
+  local sub=${1-help}
+  (( $# )) && shift
+  case $sub in
+    on)             __zp_enable ;;
+    off)            __zp_disable ;;
+    ls)             __zp_list ;;
+    status)         __zp_status ;;
+    auto)           __zp_auto_cmd "$@" ;;
+    config)         __zp_config_interactive ;;
+    init)           __zp_init ;;
+    help|-h|--help) __zp_help ;;
+    *)              __zp_warn "unknown command: $sub"; __zp_help; return 1 ;;
+  esac
+}
+
+typeset -g ZSH_PROXY_CMD_STATUS=""
+
+__zp_create_convenience_alias() {
+  : ${ZSH_PROXY_CMD=proxy}
+  if [[ -z $ZSH_PROXY_CMD ]]; then
+    ZSH_PROXY_CMD_STATUS="disabled"
+    return 0
   fi
-  if [ -z "${__read_http}" ]; then
-    __read_http="127.0.0.1:6152"
+  if (( ${+commands[$ZSH_PROXY_CMD]} || ${+functions[$ZSH_PROXY_CMD]} || ${+aliases[$ZSH_PROXY_CMD]} )); then
+    ZSH_PROXY_CMD_STATUS="skipped (name '$ZSH_PROXY_CMD' already in use; use 'zproxy')"
+    return 0
   fi
-  if [ -z "${__read_no_proxy}" ]; then
-    __read_no_proxy="localhost,127.0.0.1"
-  fi
-
-  echo "http://${__read_http}" >"${ZSH_PROXY_HOME}/http"
-  echo "socks5://${__read_socks5}" >"${ZSH_PROXY_HOME}/socks5"
-  echo "${__read_no_proxy}" >"${ZSH_PROXY_HOME}/no_proxy"
-  __read_proxy_config
+  alias "$ZSH_PROXY_CMD"=zproxy
+  ZSH_PROXY_CMD_STATUS="created ($ZSH_PROXY_CMD)"
 }
 
-init_zsh_proxy() {
-  mkdir -p "$ZSH_PROXY_HOME"
-  touch "${ZSH_PROXY_HOME}"/auto
-  touch "${ZSH_PROXY_HOME}"/http
-  touch "${ZSH_PROXY_HOME}"/socks5
-  touch "${ZSH_PROXY_HOME}"/no_proxy
-  echo "0" >"${ZSH_PROXY_HOME}/auto"
-  echo "----------------------------------------"
-  echo "Great! The zsh-proxy is initialized"
-  echo "----------------------------------------"
-  echo "Now you might want to run following command:"
-  echo "$ config_zsh_proxy"
-  echo "----------------------------------------"
+__zp_bootstrap() {
+  __zp_load_config 2>/dev/null
+  __zp_create_convenience_alias
+  __zp_autostart
 }
 
-config_zsh_proxy() {
-  __config_proxy
-}
-
-typeset -gx ZSH_PROXY_HOME="${XDG_CONFIG_HOME:-${HOME}}"/zsh-proxy
-__check_whether_init
-__auto_proxy
-
-# Aliases for backward compatibility
-alias proxy=__enable_proxy_all
-alias lsproxy=__list_proxy
-alias noproxy=__disable_proxy
+[[ -n ${ZSH_PROXY_NO_BOOTSTRAP-} ]] || __zp_bootstrap
