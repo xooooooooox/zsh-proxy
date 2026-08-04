@@ -237,6 +237,26 @@ zproxy() {
   esac
 }
 
-# ---- bootstrap (defined fully in later tasks; guard added now) ----
-__zp_bootstrap() { : ; }   # placeholder, replaced in Task 9
+typeset -g ZSH_PROXY_CMD_STATUS=""
+
+__zp_create_convenience_alias() {
+  : ${ZSH_PROXY_CMD=proxy}
+  if [[ -z $ZSH_PROXY_CMD ]]; then
+    ZSH_PROXY_CMD_STATUS="disabled"
+    return 0
+  fi
+  if (( ${+commands[$ZSH_PROXY_CMD]} || ${+functions[$ZSH_PROXY_CMD]} || ${+aliases[$ZSH_PROXY_CMD]} )); then
+    ZSH_PROXY_CMD_STATUS="skipped (name '$ZSH_PROXY_CMD' already in use; use 'zproxy')"
+    return 0
+  fi
+  alias "$ZSH_PROXY_CMD"=zproxy
+  ZSH_PROXY_CMD_STATUS="created ($ZSH_PROXY_CMD)"
+}
+
+__zp_bootstrap() {
+  __zp_load_config 2>/dev/null
+  __zp_create_convenience_alias
+  __zp_autostart
+}
+
 [[ -n ${ZSH_PROXY_NO_BOOTSTRAP-} ]] || __zp_bootstrap
