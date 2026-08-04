@@ -106,6 +106,37 @@ __zp_init() {
   __zp_info "initialized at $ZSH_PROXY_CONF"
 }
 
+# prompt on stderr, echo validated host:port on stdout
+__zp_prompt_hostport() {
+  local label=$1 def=$2 input
+  while true; do
+    print -n -u2 -- "[$label] (host:port) [$def]: "
+    read -r input || return 1
+    [[ -z $input ]] && input=$def
+    if __zp_validate_hostport "$input"; then
+      print -r -- "$input"
+      return 0
+    fi
+    __zp_warn "invalid '$input' — expected host:port with port 1-65535"
+  done
+}
+
+__zp_config_interactive() {
+  __zp_load_config 2>/dev/null   # seed defaults from existing config if any
+  local http socks noproxy
+  http=$(__zp_prompt_hostport "http proxy"   "${ZSH_PROXY_HTTP:-127.0.0.1:6152}")   || return 1
+  socks=$(__zp_prompt_hostport "socks5 proxy" "${ZSH_PROXY_SOCKS5:-127.0.0.1:6153}") || return 1
+  print -n -u2 -- "[no proxy] (comma domains) [${ZSH_PROXY_NO_PROXY:-localhost,127.0.0.1}]: "
+  read -r noproxy
+  [[ -z $noproxy ]] && noproxy=${ZSH_PROXY_NO_PROXY:-localhost,127.0.0.1}
+  ZSH_PROXY_HTTP=$http
+  ZSH_PROXY_SOCKS5=$socks
+  ZSH_PROXY_NO_PROXY=$noproxy
+  : ${ZSH_PROXY_AUTO:=0}
+  __zp_save_config || return 1
+  __zp_info "saved to $ZSH_PROXY_CONF"
+}
+
 # ---- bootstrap (defined fully in later tasks; guard added now) ----
 __zp_bootstrap() { : ; }   # placeholder, replaced in Task 9
 [[ -n ${ZSH_PROXY_NO_BOOTSTRAP-} ]] || __zp_bootstrap
