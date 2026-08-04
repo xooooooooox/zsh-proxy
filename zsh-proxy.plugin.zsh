@@ -76,6 +76,36 @@ __zp_probe() {
   esac
 }
 
+__zp_load_config() {
+  [[ -f $ZSH_PROXY_CONF ]] || return 1
+  source "$ZSH_PROXY_CONF"
+  return 0
+}
+
+# atomic: write temp then mv over the real file
+__zp_save_config() {
+  mkdir -p "$ZSH_PROXY_HOME" || { __zp_warn "cannot create $ZSH_PROXY_HOME"; return 1; }
+  local tmp="${ZSH_PROXY_CONF}.tmp.$$"
+  {
+    print -r -- "# zsh-proxy config — managed by 'zproxy config', safe to hand-edit"
+    print -r -- "ZSH_PROXY_HTTP=\"${ZSH_PROXY_HTTP}\""
+    print -r -- "ZSH_PROXY_SOCKS5=\"${ZSH_PROXY_SOCKS5}\""
+    print -r -- "ZSH_PROXY_NO_PROXY=\"${ZSH_PROXY_NO_PROXY}\""
+    print -r -- "ZSH_PROXY_AUTO=\"${ZSH_PROXY_AUTO}\""
+  } > "$tmp" || { __zp_warn "failed writing $tmp"; rm -f "$tmp"; return 1; }
+  mv -f "$tmp" "$ZSH_PROXY_CONF" || { __zp_warn "failed updating $ZSH_PROXY_CONF"; rm -f "$tmp"; return 1; }
+  return 0
+}
+
+__zp_init() {
+  : ${ZSH_PROXY_HTTP:=127.0.0.1:6152}
+  : ${ZSH_PROXY_SOCKS5:=127.0.0.1:6153}
+  : ${ZSH_PROXY_NO_PROXY:=localhost,127.0.0.1}
+  : ${ZSH_PROXY_AUTO:=0}
+  __zp_save_config || return 1
+  __zp_info "initialized at $ZSH_PROXY_CONF"
+}
+
 # ---- bootstrap (defined fully in later tasks; guard added now) ----
 __zp_bootstrap() { : ; }   # placeholder, replaced in Task 9
 [[ -n ${ZSH_PROXY_NO_BOOTSTRAP-} ]] || __zp_bootstrap
