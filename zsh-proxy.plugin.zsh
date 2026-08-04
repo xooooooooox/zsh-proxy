@@ -66,7 +66,11 @@ __zp_probe() {
     auto)
       __zp_probe_ztcp "$host" "$port"
       local rc=$?
-      (( rc == 2 )) && __zp_probe_nc "$host" "$port" || return $rc
+      if (( rc == 2 )); then
+        __zp_probe_nc "$host" "$port"
+      else
+        return $rc
+      fi
       ;;
     *) __zp_warn "unknown ZSH_PROXY_PROBE='$method'"; return 2 ;;
   esac
