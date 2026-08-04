@@ -146,6 +146,8 @@ zproxy auto off  # disable (default)
 
 When autostart is enabled, each proxy is reachability-checked before being enabled; an unreachable proxy is skipped with a warning instead of blocking shell startup. `zproxy on` always enables unconditionally, without a reachability check.
 
+> **Note on remote proxies:** The reachability check uses zsh-native `ztcp`, which fails instantly for a **local** proxy (e.g. `127.0.0.1:6152`) whose port is closed — the common case, no startup delay. A **remote** proxy host that silently drops packets (firewall black-hole, no connection refusal) is a different story: `ztcp` alone cannot time-bound that connect, so autostart may pause on the OS TCP connect timeout. This only bites when the proxy is remote **and** black-holed **and** autostart is on. To bound it, install `timeout`/`gtimeout` (e.g. GNU coreutils) — they are used automatically when present — or keep autostart off for remote proxies and enable manually with `zproxy on`.
+
 ## Configuration
 
 All settings live in a single file, `${XDG_CONFIG_HOME:-$HOME/.config}/zsh-proxy/proxy.conf`, a sourceable `KEY="value"` file:
