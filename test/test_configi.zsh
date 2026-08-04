@@ -23,4 +23,8 @@ assert_eq "config saved socks5"  "$ZSH_PROXY_SOCKS5"   "10.0.0.1:1080"
 assert_eq "config saved noproxy" "$ZSH_PROXY_NO_PROXY" "localhost"
 assert_eq "config preserved auto" "$ZSH_PROXY_AUTO"    "1"
 
+# EOF at the no_proxy prompt aborts (read failure propagates)
+assert_fail "no_proxy EOF aborts config" \
+  "printf '1.1.1.1:1\n1.1.1.1:2\n' | __zp_config_interactive >/dev/null 2>&1"
+
 _summary

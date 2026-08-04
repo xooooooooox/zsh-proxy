@@ -126,9 +126,10 @@ __zp_config_interactive() {
   local http socks noproxy
   http=$(__zp_prompt_hostport "http proxy"   "${ZSH_PROXY_HTTP:-127.0.0.1:6152}")   || return 1
   socks=$(__zp_prompt_hostport "socks5 proxy" "${ZSH_PROXY_SOCKS5:-127.0.0.1:6153}") || return 1
-  print -n -u2 -- "[no proxy] (comma domains) [${ZSH_PROXY_NO_PROXY:-localhost,127.0.0.1}]: "
-  read -r noproxy
-  [[ -z $noproxy ]] && noproxy=${ZSH_PROXY_NO_PROXY:-localhost,127.0.0.1}
+  local def_np=${ZSH_PROXY_NO_PROXY:-localhost,127.0.0.1}
+  print -n -u2 -- "[no proxy] (comma domains) [$def_np]: "
+  read -r noproxy || return 1
+  [[ -z $noproxy ]] && noproxy=$def_np
   ZSH_PROXY_HTTP=$http
   ZSH_PROXY_SOCKS5=$socks
   ZSH_PROXY_NO_PROXY=$noproxy
