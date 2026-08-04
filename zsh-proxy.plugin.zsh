@@ -182,6 +182,61 @@ __zp_autostart() {
   __zp_export_noproxy
 }
 
+__zp_list() {
+  local v
+  for v in http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY; do
+    print -r -- "$v=${(P)v}"
+  done
+}
+
+__zp_status() {
+  __zp_load_config 2>/dev/null
+  print -r -- "config:  ${ZSH_PROXY_CONF}"
+  print -r -- "http:    ${ZSH_PROXY_HTTP:-<unset>}"
+  print -r -- "socks5:  ${ZSH_PROXY_SOCKS5:-<unset>}"
+  print -r -- "noproxy: ${ZSH_PROXY_NO_PROXY:-<unset>}"
+  print -r -- "auto:    ${ZSH_PROXY_AUTO:-0}"
+  print -r -- "command: ${ZSH_PROXY_CMD_STATUS:-<none>}"
+}
+
+__zp_help() {
+  print -r -- "usage: zproxy <command>"
+  print -r -- "  on            enable proxy env vars (no reachability check)"
+  print -r -- "  off           disable proxy env vars"
+  print -r -- "  ls            list current proxy env vars"
+  print -r -- "  status        show config, auto state, convenience name"
+  print -r -- "  auto [on|off] toggle / show autostart on new shells"
+  print -r -- "  config        interactive configuration"
+  print -r -- "  init          create default config"
+  print -r -- "  help          this help"
+}
+
+__zp_auto_cmd() {
+  __zp_load_config || { __zp_warn "not initialized — run 'zproxy init'"; return 1; }
+  case ${1-} in
+    on)  ZSH_PROXY_AUTO=1; __zp_save_config && __zp_info "autostart enabled" ;;
+    off) ZSH_PROXY_AUTO=0; __zp_save_config && __zp_info "autostart disabled" ;;
+    "")  __zp_info "autostart is ${ZSH_PROXY_AUTO:-0}" ;;
+    *)   __zp_warn "usage: zproxy auto [on|off]"; return 1 ;;
+  esac
+}
+
+zproxy() {
+  local sub=${1-help}
+  (( $# )) && shift
+  case $sub in
+    on)             __zp_enable ;;
+    off)            __zp_disable ;;
+    ls)             __zp_list ;;
+    status)         __zp_status ;;
+    auto)           __zp_auto_cmd "$@" ;;
+    config)         __zp_config_interactive ;;
+    init)           __zp_init ;;
+    help|-h|--help) __zp_help ;;
+    *)              __zp_warn "unknown command: $sub"; __zp_help; return 1 ;;
+  esac
+}
+
 # ---- bootstrap (defined fully in later tasks; guard added now) ----
 __zp_bootstrap() { : ; }   # placeholder, replaced in Task 9
 [[ -n ${ZSH_PROXY_NO_BOOTSTRAP-} ]] || __zp_bootstrap
